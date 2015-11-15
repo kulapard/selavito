@@ -146,50 +146,52 @@ func main() {
 				return
 			}
 
-			InitLoggers(verbose)
-
+			var page_url string
+			counter := max_items
 			items := make(chan *Item)
-
 			save_wg := new(sync.WaitGroup)
 			parse_wg := new(sync.WaitGroup)
+
+			InitLoggers(verbose)
 
 			save_wg.Add(1)
 			go saveToCSV(items, save_wg)
 
-			var search_url string
-
-			// TODO: добавить паджинацию
 			if category == "" {
-				search_url = fmt.Sprintf("%s/%s?q=%s", BASE_URL, location, query)
+				page_url = fmt.Sprintf("%s/%s?q=%s", BASE_URL, location, query)
 			} else {
-				search_url = fmt.Sprintf("%s/%s/%s?q=%s", BASE_URL, location, category, query)
+				page_url = fmt.Sprintf("%s/%s/%s?q=%s", BASE_URL, location, category, query)
 			}
 
-			Info.Println(search_url)
+			for page_url != "" && counter > 0 {
+				Info.Println(page_url)
 
-			doc, err := goquery.NewDocument(search_url)
-			perror(err)
+				doc, err := goquery.NewDocument(page_url)
+				perror(err)
 
-			counter := max_items
+				next_page_url, _ := doc.Find(".page-next").Find("a").First().Attr("href")
+				next_page_url = fmt.Sprintf("%s%s", BASE_URL, next_page_url)
+				Debug.Println("Next page:", next_page_url)
 
-
-			doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
-				if counter > 0 {
-					item_url, exists := s.Find(".item-link").Attr("href")
-					if exists {
-						var item Item
-						item.header = s.Find(".header-text").First().Text()
-						item.location = s.Find(".info-location").First().Text()
-						item.url = fmt.Sprintf("%s%s", BASE_URL, item_url)
-						parse_wg.Add(1)
-						go parseItem(&item, parse_wg, items)
-						counter--
-						Debug.Printf("%+v\n", item)
-					}else {
-						Error.Println(".item-link not found")
+				doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
+					if counter > 0 {
+						item_url, exists := s.Find(".item-link").Attr("href")
+						if exists {
+							var item Item
+							item.header = s.Find(".header-text").First().Text()
+							item.location = s.Find(".info-location").First().Text()
+							item.url = fmt.Sprintf("%s%s", BASE_URL, item_url)
+							parse_wg.Add(1)
+							go parseItem(&item, parse_wg, items)
+							counter--
+							Debug.Printf("%+v\n", item)
+						}else {
+							Error.Println(".item-link not found")
+						}
 					}
-				}
-			})
+				})
+				page_url = next_page_url
+			}
 
 			// Дожидаемся завершения работы всех парсеров...
 			parse_wg.Wait()
@@ -209,7 +211,7 @@ func main() {
 		"Фильтр по категории (примеры: nedvizhimost, transport, rabota, rezume, vakansii)")
 
 	SelaAvitoCmd.Flags().BoolVarP(&verbose, "verbose", "v", false,
-		"Выводит больше информации в консоль")
+		"Более подробный вывод в консоль")
 
 	SelaAvitoCmd.Flags().Int8VarP(&max_items, "max", "m", 1,
 		"Максимальное количество элементов для поиска")
