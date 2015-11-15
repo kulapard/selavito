@@ -27,6 +27,7 @@ type Item struct {
 	phone    string
 }
 var (
+	Debug   *log.Logger
 	Info    *log.Logger
 	Error   *log.Logger
 )
@@ -34,28 +35,30 @@ var (
 func perror(err error) {
 	if err != nil {
 		Error.Println(err)
-//		panic(err)
+		//		panic(err)
 	}
 }
 
 func InitLoggers(verbose bool) {
-	var infoHandle, errorHandle io.Writer
+	var infoHandle, errorHandle, debugHandle io.Writer
 
 	if verbose {
-		infoHandle = os.Stdout
-		errorHandle = os.Stderr
+		debugHandle = os.Stdout
 	}else {
-		infoHandle = ioutil.Discard
-		errorHandle = os.Stderr
+		debugHandle = ioutil.Discard
 	}
 
+	infoHandle = os.Stdout
+	errorHandle = os.Stderr
+
+	Debug = log.New(debugHandle, "DEBUG: ", 0)
 	Info = log.New(infoHandle, "INFO: ", 0)
 	Error = log.New(errorHandle, "ERROR: ", 0)
 }
 
 // Достаёт телефонный номер из JSON по заданному URL
 func getPhone(phone_url, referer string) (string, error) {
-	Info.Println("Persing phone url:", phone_url)
+	Debug.Println("Persing phone url:", phone_url)
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", phone_url, nil)
@@ -76,7 +79,7 @@ func getPhone(phone_url, referer string) (string, error) {
 	err = json.Unmarshal(body, &phone_data)
 	perror(err)
 
-	Info.Println("Phone number:", phone_data["phone"])
+	Debug.Println("Phone number:", phone_data["phone"])
 	return phone_data["phone"], nil
 }
 
@@ -87,7 +90,7 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 	doc.Find(".action-show-number").Each(func(i int, s *goquery.Selection) {
 		phone_url, exists := s.Attr("href")
 		if exists {
-			Info.Println("Found phone url:", phone_url)
+			Debug.Println("Found phone url:", phone_url)
 
 			phone_url := strings.Join([]string{BASE_URL, phone_url, "?async"}, "")
 			item.phone, err = getPhone(phone_url, item.url)
@@ -103,7 +106,7 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 	wg.Done()
 }
 
-func saveToCSV(items chan *Item) {
+func saveToCSV(items chan *Item, wg *sync.WaitGroup) {
 	w := csv.NewWriter(os.Stdout)
 
 	for item := range items {
@@ -119,6 +122,8 @@ func saveToCSV(items chan *Item) {
 	if err := w.Error(); err != nil {
 		log.Fatal(err)
 	}
+
+	wg.Done()
 }
 
 
@@ -128,60 +133,86 @@ func main() {
 	var location string
 	var category string
 	var verbose bool
+	var max_items int8
 
 	var SelaAvitoCmd = &cobra.Command{
 		Use: "selavito",
-		Short: "",
+		Short: "Утилита для получения телефонных номеров с Avito (avito.ru)",
+		Example: "selavito -l moskva -q macbook\nselavito -l sankt-peterburg -с rabota -q golang",
+
 		Run: func(cmd *cobra.Command, args []string) {
+			if query == "" {
+				cmd.Help()
+				return
+			}
+
 			InitLoggers(verbose)
 
 			items := make(chan *Item)
 
-			go saveToCSV(items)
+			save_wg := new(sync.WaitGroup)
+			parse_wg := new(sync.WaitGroup)
+
+			save_wg.Add(1)
+			go saveToCSV(items, save_wg)
 
 			var search_url string
 
-//			TODO: добавить паджинацию
+			// TODO: добавить паджинацию
 			if category == "" {
 				search_url = fmt.Sprintf("%s/%s?q=%s", BASE_URL, location, query)
 			} else {
 				search_url = fmt.Sprintf("%s/%s/%s?q=%s", BASE_URL, location, category, query)
 			}
 
-			Info.Print(search_url)
+			Info.Println(search_url)
 
 			doc, err := goquery.NewDocument(search_url)
 			perror(err)
 
-			wg := new(sync.WaitGroup)
+			counter := max_items
+
 
 			doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
-				item_url, exists := s.Find(".item-link").Attr("href")
-				if exists {
-					var item Item
-					item.header = s.Find(".header-text").First().Text()
-					item.location = s.Find(".info-location").First().Text()
-					item.url = fmt.Sprintf("%s%s", BASE_URL, item_url)
-					wg.Add(1)
-					go parseItem(&item, wg, items)
-					Info.Printf("%+v\n", item)
+				if counter > 0 {
+					item_url, exists := s.Find(".item-link").Attr("href")
+					if exists {
+						var item Item
+						item.header = s.Find(".header-text").First().Text()
+						item.location = s.Find(".info-location").First().Text()
+						item.url = fmt.Sprintf("%s%s", BASE_URL, item_url)
+						parse_wg.Add(1)
+						go parseItem(&item, parse_wg, items)
+						counter--
+						Debug.Printf("%+v\n", item)
+					}else {
+						Error.Println(".item-link not found")
+					}
 				}
-
 			})
 
-			wg.Wait()
+			// Дожидаемся завершения работы всех парсеров...
+			parse_wg.Wait()
+
+			// ...и только после закрываем канал
 			close(items)
+
+			// Ждём пока данные окончательно сохранятся
+			save_wg.Wait()
 		},
 	}
 
-	SelaAvitoCmd.Flags().StringVarP(&query, "query", "q", "", "Query string.")
+	SelaAvitoCmd.Flags().StringVarP(&query, "query", "q", "", "Строка для поиска")
 	SelaAvitoCmd.Flags().StringVarP(&location, "location", "l", "rossiya",
-		"Filter by location. Examples: moskva, moskovskaya_oblast, sankt-peterburg.")
+		"Фильтр по региону (примеры: moskva, moskovskaya_oblast, sankt-peterburg)")
 	SelaAvitoCmd.Flags().StringVarP(&category, "category", "c", "",
-		"Filter by category. Examples: nedvizhimost, transport, rabota, rezume, vakansii.")
+		"Фильтр по категории (примеры: nedvizhimost, transport, rabota, rezume, vakansii)")
 
-	SelaAvitoCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false,
-		"Show more information.")
+	SelaAvitoCmd.Flags().BoolVarP(&verbose, "verbose", "v", false,
+		"Выводит больше информации в консоль")
+
+	SelaAvitoCmd.Flags().Int8VarP(&max_items, "max", "m", 1,
+		"Максимальное количество элементов для поиска")
 
 	SelaAvitoCmd.Execute()
 
