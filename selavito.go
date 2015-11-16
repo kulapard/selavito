@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 	"io/ioutil"
 	"encoding/json"
 	"encoding/csv"
@@ -18,7 +19,7 @@ import (
 
 const BASE_URL string = "https://m.avito.ru"
 var IPBanned error = errors.New("You are banned by Avito!")
-
+var throttle <-chan time.Time
 
 type Item struct {
 	header   string
@@ -64,6 +65,7 @@ func getPhone(phone_url, referer string) (string, error) {
 	req, err := http.NewRequest("GET", phone_url, nil)
 	req.Header.Add("referer", referer)
 
+	throttleWait()
 	res, err := client.Do(req)
 	perror(err)
 
@@ -84,8 +86,14 @@ func getPhone(phone_url, referer string) (string, error) {
 }
 
 func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
+	throttleWait()
+
 	doc, err := goquery.NewDocument(item.url)
-	perror(err)
+	if err != nil{
+		Error.Println(err)
+		wg.Done()
+		return
+	}
 
 	doc.Find(".action-show-number").Each(func(i int, s *goquery.Selection) {
 		phone_url, exists := s.Attr("href")
@@ -135,6 +143,23 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 }
 
 
+func throttleSet(pause int64) {
+	Debug.Printf("Set throttle pause: %d ms", pause)
+	if pause > 0 {
+		throttle = time.Tick(time.Millisecond * time.Duration(pause))
+	}
+}
+
+func throttleWait() {
+	if throttle == nil {
+		Debug.Println("Ignoring throttle")
+		return
+	}
+	Debug.Println("Waiting throttle...")
+	<-throttle
+	Debug.Println("Waiting throttle done")
+}
+
 
 func main() {
 	var query string
@@ -143,17 +168,22 @@ func main() {
 	var path_to_csvfile string
 	var verbose bool
 	var max_items int8
+	var pause int64
 
 	var SelaAvitoCmd = &cobra.Command{
 		Use: "selavito",
-		Short: "Утилита для сбора телефонных номеров с сайта avito.ru",
+		Short: "Утилита для парсинга объявлений (вместе с телефонными номерами) с сайта avito.ru",
 		Example: "selavito -l moskva -q macbook --csv output.csv\niselavito -l sankt-peterburg -с rabota -q golang --csv output.csv",
 
 		Run: func(cmd *cobra.Command, args []string) {
+			InitLoggers(verbose)
+
 			if query == "" || path_to_csvfile == "" {
 				cmd.Help()
 				return
 			}
+
+			throttleSet(pause)
 
 			var page_url string
 			counter := max_items
@@ -161,7 +191,6 @@ func main() {
 			save_wg := new(sync.WaitGroup)
 			parse_wg := new(sync.WaitGroup)
 
-			InitLoggers(verbose)
 
 			save_wg.Add(1)
 			go saveToCSV(path_to_csvfile, items, save_wg)
@@ -172,15 +201,23 @@ func main() {
 				page_url = fmt.Sprintf("%s/%s/%s?q=%s", BASE_URL, location, category, query)
 			}
 
-			for page_url != "" && counter > 0 {
+			// max_items == 0 - без ограничения
+			for page_url != "" && (counter > 0 || max_items == 0) {
 				Info.Println(page_url)
 
-				doc, err := goquery.NewDocument(page_url)
-				perror(err)
+				throttleWait()
 
-				next_page_url, _ := doc.Find(".page-next").Find("a").First().Attr("href")
-				next_page_url = fmt.Sprintf("%s%s", BASE_URL, next_page_url)
-				Debug.Println("Next page:", next_page_url)
+				doc, err := goquery.NewDocument(page_url)
+				if err != nil{
+					Error.Println(err)
+					break
+				}
+
+				next_page_url, exists := doc.Find(".page-next").Find("a").First().Attr("href")
+				if exists{
+					next_page_url = fmt.Sprintf("%s%s", BASE_URL, next_page_url)
+					Debug.Println("Next page:", next_page_url)
+				}
 
 				doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
 					if counter > 0 {
@@ -225,7 +262,9 @@ func main() {
 		"Более подробный вывод в консоль")
 
 	SelaAvitoCmd.Flags().Int8VarP(&max_items, "max", "m", 1,
-		"Максимальное количество элементов для поиска")
+		"Максимальное количество элементов для поиска (0 - без ограничения)")
+	SelaAvitoCmd.Flags().Int64VarP(&pause, "pause", "p", 0,
+		"Пауза между запросами (в микросекундах)")
 
 	SelaAvitoCmd.Execute()
 
