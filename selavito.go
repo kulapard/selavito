@@ -106,8 +106,16 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 	wg.Done()
 }
 
-func saveToCSV(items chan *Item, wg *sync.WaitGroup) {
-	w := csv.NewWriter(os.Stdout)
+func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
+	csvfile, err := os.Create(path_to_csvfile)
+
+	if err != nil {
+		Error.Println(err)
+		return
+	}
+	defer csvfile.Close()
+
+	w := csv.NewWriter(csvfile)
 
 	for item := range items {
 		record := []string{item.header, item.location, item.phone, item.url}
@@ -132,16 +140,17 @@ func main() {
 	var query string
 	var location string
 	var category string
+	var path_to_csvfile string
 	var verbose bool
 	var max_items int8
 
 	var SelaAvitoCmd = &cobra.Command{
 		Use: "selavito",
 		Short: "Утилита для получения телефонных номеров с Avito (avito.ru)",
-		Example: "selavito -l moskva -q macbook\nselavito -l sankt-peterburg -с rabota -q golang",
+		Example: "selavito -l moskva -q macbook --csv output.csv\nselavito -l sankt-peterburg -с rabota -q golang --csv output.csv",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			if query == "" {
+			if query == "" || path_to_csvfile == "" {
 				cmd.Help()
 				return
 			}
@@ -155,7 +164,7 @@ func main() {
 			InitLoggers(verbose)
 
 			save_wg.Add(1)
-			go saveToCSV(items, save_wg)
+			go saveToCSV(path_to_csvfile, items, save_wg)
 
 			if category == "" {
 				page_url = fmt.Sprintf("%s/%s?q=%s", BASE_URL, location, query)
@@ -209,6 +218,8 @@ func main() {
 		"Фильтр по региону (примеры: moskva, moskovskaya_oblast, sankt-peterburg)")
 	SelaAvitoCmd.Flags().StringVarP(&category, "category", "c", "",
 		"Фильтр по категории (примеры: nedvizhimost, transport, rabota, rezume, vakansii)")
+	SelaAvitoCmd.Flags().StringVar(&path_to_csvfile, "csv", "",
+		"Путь к csv файлу для сохранения данных")
 
 	SelaAvitoCmd.Flags().BoolVarP(&verbose, "verbose", "v", false,
 		"Более подробный вывод в консоль")
