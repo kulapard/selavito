@@ -146,8 +146,8 @@ func main() {
 
 	var SelaAvitoCmd = &cobra.Command{
 		Use: "selavito",
-		Short: "Утилита для получения телефонных номеров с Avito (avito.ru)",
-		Example: "selavito -l moskva -q macbook --csv output.csv\nselavito -l sankt-peterburg -с rabota -q golang --csv output.csv",
+		Short: "Утилита для сбора телефонных номеров с сайта avito.ru",
+		Example: "selavito -l moskva -q macbook --csv output.csv\niselavito -l sankt-peterburg -с rabota -q golang --csv output.csv",
 
 		Run: func(cmd *cobra.Command, args []string) {
 			if query == "" || path_to_csvfile == "" {
