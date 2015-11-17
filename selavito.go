@@ -67,7 +67,9 @@ func getPhone(phone_url, referer string) (string, error) {
 
 	throttleWait()
 	res, err := client.Do(req)
-	perror(err)
+	if err != nil{
+		return "", err
+	}
 
 	defer res.Body.Close()
 
@@ -110,8 +112,6 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 			}else {
 				items <- item
 			}
-
-
 		}
 	})
 	wg.Done()
@@ -170,7 +170,7 @@ func main() {
 	var category string
 	var path_to_csvfile string
 	var verbose bool
-	var max_items int8
+	var max_items int64
 	var pause int64
 
 	var SelaAvitoCmd = &cobra.Command{
@@ -222,6 +222,17 @@ func main() {
 					Debug.Println("Next page:", next_page_url)
 				}
 
+				items_category := doc.Find(".nav-helper-header").First().Text()
+				items_count := doc.Find(".nav-helper-text").First().Text()
+				items_category = strings.TrimSpace(items_category)
+				items_count = strings.TrimSpace(items_count)
+				if counter == 0{
+					Info.Println(items_category)
+					Info.Println(items_count)
+				}else {
+					Info.Printf("%d/%s", counter, items_count)
+				}
+
 				doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
 					if counter > 0 {
 						item_url, exists := s.Find(".item-link").Attr("href")
@@ -264,7 +275,7 @@ func main() {
 	SelaAvitoCmd.Flags().BoolVarP(&verbose, "verbose", "v", false,
 		"Более подробный вывод в консоль")
 
-	SelaAvitoCmd.Flags().Int8VarP(&max_items, "max", "m", 1,
+	SelaAvitoCmd.Flags().Int64VarP(&max_items, "max", "m", 1,
 		"Максимальное количество элементов для поиска (0 - без ограничения)")
 	SelaAvitoCmd.Flags().Int64VarP(&pause, "pause", "p", 0,
 		"Пауза между запросами (в микросекундах)")
