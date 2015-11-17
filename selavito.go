@@ -89,11 +89,14 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 	throttleWait()
 
 	doc, err := goquery.NewDocument(item.url)
-	if err != nil{
+	if err != nil {
 		Error.Println(err)
 		wg.Done()
 		return
 	}
+
+	item.location = doc.Find(".avito-address-text").First().Text()
+	item.location = strings.TrimSpace(item.location)
 
 	doc.Find(".action-show-number").Each(func(i int, s *goquery.Selection) {
 		phone_url, exists := s.Attr("href")
@@ -208,13 +211,13 @@ func main() {
 				throttleWait()
 
 				doc, err := goquery.NewDocument(page_url)
-				if err != nil{
+				if err != nil {
 					Error.Println(err)
 					break
 				}
 
 				next_page_url, exists := doc.Find(".page-next").Find("a").First().Attr("href")
-				if exists{
+				if exists {
 					next_page_url = fmt.Sprintf("%s%s", BASE_URL, next_page_url)
 					Debug.Println("Next page:", next_page_url)
 				}
