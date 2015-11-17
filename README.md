@@ -7,10 +7,7 @@
 
 
 ## Установка
-Скачать и распаковать архив с бинарным файлом:
-- OS X - [i386](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_darwin_i386.tar.gz), [amd64](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_darwin_amd64.tar.gz)
-- Linux - [i386](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_linux_i386.tar.gz), [amd64](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_linux_amd64.tar.gz)
-- Windows - [i386](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_windows_i386.tar.gz), [amd64](https://github.com/kulapard/selavito/releases/download/1.0.0/selavito_1.0.0_windows_amd64.tar.gz)
+[Скачать](https://github.com/kulapard/selavito/releases/latest) и распаковать архив с бинарным файлом.
 
 ## Запуск
 Пример поиска объявления и сбора номеров (но не более 30 номеров) по запросу "кресло" в Москве:
