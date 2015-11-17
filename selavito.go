@@ -8,17 +8,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"errors"
 	"io/ioutil"
 	"encoding/json"
 	"encoding/csv"
+	"net/http"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/spf13/cobra"
-	"net/http"
-	"errors"
+	"github.com/fatih/color"
 )
 
 const BASE_URL string = "https://m.avito.ru"
-var IPBanned error = errors.New("You are banned by Avito!")
+var IPBanned error = errors.New("Ваш IP забанили!!")
 var throttle <-chan time.Time
 
 type Item struct {
@@ -28,17 +29,24 @@ type Item struct {
 	phone    string
 }
 var (
-	Debug   *log.Logger
-	Info    *log.Logger
-	Error   *log.Logger
+	DebugLogger   *log.Logger
+	InfoLogger    *log.Logger
+	ErrorLogger   *log.Logger
 )
 
-func perror(err error) {
-	if err != nil {
-		Error.Println(err)
-		//		panic(err)
-	}
+func Debug(format string, v ...interface{}) {
+	DebugLogger.Println(color.GreenString(format, v...))
 }
+
+
+func Info(format string, v ...interface{}) {
+	InfoLogger.Println(color.YellowString(format, v...))
+}
+
+func Error(format string, v ...interface{}) {
+	ErrorLogger.Println(color.RedString(format, v...))
+}
+
 
 func InitLoggers(verbose bool) {
 	var infoHandle, errorHandle, debugHandle io.Writer
@@ -52,14 +60,14 @@ func InitLoggers(verbose bool) {
 	infoHandle = os.Stdout
 	errorHandle = os.Stderr
 
-	Debug = log.New(debugHandle, "DEBUG: ", 0)
-	Info = log.New(infoHandle, "INFO: ", 0)
-	Error = log.New(errorHandle, "ERROR: ", 0)
+	DebugLogger = log.New(debugHandle, "", 0)
+	InfoLogger = log.New(infoHandle, "", 0)
+	ErrorLogger = log.New(errorHandle, "", 0)
 }
 
 // Достаёт телефонный номер из JSON по заданному URL
 func getPhone(phone_url, referer string) (string, error) {
-	Debug.Println("Persing phone url:", phone_url)
+	Debug("Persing phone url: %s", phone_url)
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", phone_url, nil)
@@ -67,23 +75,29 @@ func getPhone(phone_url, referer string) (string, error) {
 
 	throttleWait()
 	res, err := client.Do(req)
-	if err != nil{
+	if err != nil {
 		return "", err
 	}
 
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
-	perror(err)
+	if err != nil {
+		Error("%s", err.Error())
+		return "", err
+	}
 	if res.StatusCode == 403 {
 		return "", IPBanned
 	}
 
 	phone_data := make(map[string]string)
 	err = json.Unmarshal(body, &phone_data)
-	perror(err)
+	if err != nil {
+		Error("%s", err.Error())
+		return "", err
+	}
 
-	Debug.Println("Phone number:", phone_data["phone"])
+	Debug("Phone number: %s", phone_data["phone"])
 	return phone_data["phone"], nil
 }
 
@@ -92,7 +106,7 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 
 	doc, err := goquery.NewDocument(item.url)
 	if err != nil {
-		Error.Println(err)
+		Error("%s", err.Error())
 		wg.Done()
 		return
 	}
@@ -103,12 +117,12 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 	doc.Find(".action-show-number").Each(func(i int, s *goquery.Selection) {
 		phone_url, exists := s.Attr("href")
 		if exists {
-			Debug.Println("Found phone url:", phone_url)
+			Debug("Found phone url: %s", phone_url)
 
 			phone_url := strings.Join([]string{BASE_URL, phone_url, "?async"}, "")
 			item.phone, err = getPhone(phone_url, item.url)
 			if err != nil {
-				Error.Println(err)
+				Error("%s", err.Error())
 			}else {
 				items <- item
 			}
@@ -121,7 +135,7 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 	csvfile, err := os.Create(path_to_csvfile)
 
 	if err != nil {
-		Error.Println(err)
+		Error("%s", err.Error())
 		return
 	}
 	defer csvfile.Close()
@@ -131,7 +145,7 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 	for item := range items {
 		record := []string{item.header, item.location, item.phone, item.url}
 		if err := w.Write(record); err != nil {
-			Error.Println("error writing record to csv:", err)
+			Error("Не удалось записать в csv файл: %s", err)
 		}
 	}
 
@@ -139,7 +153,7 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 	w.Flush()
 
 	if err := w.Error(); err != nil {
-		log.Fatal(err)
+		Error("%s", err.Error())
 	}
 
 	wg.Done()
@@ -147,7 +161,7 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 
 
 func throttleSet(pause int64) {
-	Debug.Printf("Set throttle pause: %d ms", pause)
+	Debug("Set throttle pause: %d ms", pause)
 	if pause > 0 {
 		throttle = time.Tick(time.Millisecond * time.Duration(pause))
 	}
@@ -155,12 +169,12 @@ func throttleSet(pause int64) {
 
 func throttleWait() {
 	if throttle == nil {
-		Debug.Println("Ignoring throttle")
+		Debug("Ignoring throttle")
 		return
 	}
-	Debug.Println("Waiting throttle...")
+	Debug("Waiting throttle...")
 	<-throttle
-	Debug.Println("Waiting throttle done")
+	Debug("Waiting throttle done")
 }
 
 
@@ -204,33 +218,39 @@ func main() {
 				page_url = fmt.Sprintf("%s/%s/%s?q=%s", BASE_URL, location, category, query)
 			}
 
+			items_done := 0
+
 			// max_items == 0 - без ограничения
 			for page_url != "" && (counter > 0 || max_items == 0) {
-				Info.Println(page_url)
+				Info("Парсинг страницы: %s", page_url)
 
 				throttleWait()
 
 				doc, err := goquery.NewDocument(page_url)
 				if err != nil {
-					Error.Println(err)
+					Error(err.Error())
 					break
 				}
 
 				next_page_url, exists := doc.Find(".page-next").Find("a").First().Attr("href")
 				if exists {
 					next_page_url = fmt.Sprintf("%s%s", BASE_URL, next_page_url)
-					Debug.Println("Next page:", next_page_url)
+					Info("Следующая страница: %s", next_page_url)
 				}
 
 				items_category := doc.Find(".nav-helper-header").First().Text()
+				if items_category == ""{
+					Error("Неверный формат страницы! Скорее всего ваш IP забанили!")
+					break
+				}
 				items_count := doc.Find(".nav-helper-text").First().Text()
 				items_category = strings.TrimSpace(items_category)
 				items_count = strings.TrimSpace(items_count)
-				if counter == 0{
-					Info.Println(items_category)
-					Info.Println(items_count)
+				if items_done == 0 {
+					fmt.Println("Категория:", items_category)
+					fmt.Println("Найдено объявлений:", items_count)
 				}else {
-					Info.Printf("%d/%s", counter, items_count)
+					fmt.Printf("Процесс выполнения: %d/%s\n", items_done, items_count)
 				}
 
 				doc.Find(".b-item").Each(func(i int, s *goquery.Selection) {
@@ -244,9 +264,10 @@ func main() {
 							parse_wg.Add(1)
 							go parseItem(&item, parse_wg, items)
 							counter--
-							Debug.Printf("%+v\n", item)
+							items_done++
+							Debug("%+v\n", item)
 						}else {
-							Error.Println(".item-link not found")
+							Error(".item-link not found")
 						}
 					}
 				})
