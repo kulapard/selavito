@@ -1,15 +1,8 @@
-language: go
 sudo: false
-
+language: go
 go:
 - 1.5.1
 - tip
 
 before_install:
-- go get github.com/spf13/cobra
-- go get github.com/fatih/color
-- go get github.com/PuerkitoBio/goquery
-
-notifications:
-  email:
-  - taras@drapalyuk.com
+- go get -t ./...
