@@ -1,5 +1,7 @@
 # SelAvito
 
+[![Build Status](https://travis-ci.org/kulapard/selavito.svg?branch=master)](https://travis-ci.org/kulapard/selavito)
+
 Утилита для парсинга объявлений (вместе с телефонными номерами) с сайта [avito.ru](https://avito.ru)
 
 **Внимание!** Если проявлять чрезмерную активность, Avito может на время забанить ваш IP.
