@@ -1,24 +1,25 @@
 package main
 
 import (
-	"os"
-	"io"
+	"encoding/csv"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/kulapard/selavito/Godeps/_workspace/src/github.com/PuerkitoBio/goquery"
+	"github.com/kulapard/selavito/Godeps/_workspace/src/github.com/fatih/color"
+	"github.com/kulapard/selavito/Godeps/_workspace/src/github.com/spf13/cobra"
+	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
-	"errors"
-	"io/ioutil"
-	"encoding/json"
-	"encoding/csv"
-	"net/http"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/spf13/cobra"
-	"github.com/fatih/color"
 )
 
 const BASE_URL string = "https://m.avito.ru"
+
 var IPBanned error = errors.New("Ваш IP забанили!!")
 var throttle <-chan time.Time
 
@@ -28,16 +29,16 @@ type Item struct {
 	url      string
 	phone    string
 }
+
 var (
-	DebugLogger   *log.Logger
-	InfoLogger    *log.Logger
-	ErrorLogger   *log.Logger
+	DebugLogger *log.Logger
+	InfoLogger  *log.Logger
+	ErrorLogger *log.Logger
 )
 
 func Debug(format string, v ...interface{}) {
 	DebugLogger.Println(color.GreenString(format, v...))
 }
-
 
 func Info(format string, v ...interface{}) {
 	InfoLogger.Println(color.YellowString(format, v...))
@@ -47,13 +48,12 @@ func Error(format string, v ...interface{}) {
 	ErrorLogger.Println(color.RedString(format, v...))
 }
 
-
 func InitLoggers(verbose bool) {
 	var infoHandle, errorHandle, debugHandle io.Writer
 
 	if verbose {
 		debugHandle = os.Stdout
-	}else {
+	} else {
 		debugHandle = ioutil.Discard
 	}
 
@@ -123,7 +123,7 @@ func parseItem(item *Item, wg *sync.WaitGroup, items chan *Item) {
 			item.phone, err = getPhone(phone_url, item.url)
 			if err != nil {
 				Error("%s", err.Error())
-			}else {
+			} else {
 				items <- item
 			}
 		}
@@ -159,7 +159,6 @@ func saveToCSV(path_to_csvfile string, items chan *Item, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-
 func throttleSet(pause int64) {
 	Debug("Set throttle pause: %d ms", pause)
 	if pause > 0 {
@@ -177,7 +176,6 @@ func throttleWait() {
 	Debug("Waiting throttle done")
 }
 
-
 func main() {
 	var query string
 	var location string
@@ -188,8 +186,8 @@ func main() {
 	var pause int64
 
 	var SelaAvitoCmd = &cobra.Command{
-		Use: "selavito",
-		Short: "Утилита для парсинга объявлений (вместе с телефонными номерами) с сайта avito.ru",
+		Use:     "selavito",
+		Short:   "Утилита для парсинга объявлений (вместе с телефонными номерами) с сайта avito.ru",
 		Example: "selavito -l moskva -q macbook --csv output.csv\niselavito -l sankt-peterburg -с rabota -q golang --csv output.csv",
 
 		Run: func(cmd *cobra.Command, args []string) {
@@ -207,7 +205,6 @@ func main() {
 			items := make(chan *Item)
 			save_wg := new(sync.WaitGroup)
 			parse_wg := new(sync.WaitGroup)
-
 
 			save_wg.Add(1)
 			go saveToCSV(path_to_csvfile, items, save_wg)
@@ -239,7 +236,7 @@ func main() {
 				}
 
 				items_category := doc.Find(".nav-helper-header").First().Text()
-				if items_category == ""{
+				if items_category == "" {
 					Error("Неверный формат страницы! Скорее всего ваш IP забанили!")
 					break
 				}
@@ -249,7 +246,7 @@ func main() {
 				if items_done == 0 {
 					fmt.Println("Категория:", items_category)
 					fmt.Println("Найдено объявлений:", items_count)
-				}else {
+				} else {
 					fmt.Printf("Процесс выполнения: %d/%s\n", items_done, items_count)
 				}
 
@@ -266,7 +263,7 @@ func main() {
 							counter--
 							items_done++
 							Debug("%+v\n", item)
-						}else {
+						} else {
 							Error(".item-link not found")
 						}
 					}
