@@ -1,5 +1,6 @@
 # SelAvito
 
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/kulapard/selavito/master/LICENSE)
 [![Build Status](https://travis-ci.org/kulapard/selavito.svg?branch=master)](https://travis-ci.org/kulapard/selavito)
 [![Code Health](https://landscape.io/github/kulapard/selavito/master/landscape.svg?style=flat)](https://landscape.io/github/kulapard/selavito/master)
 
