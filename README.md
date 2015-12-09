@@ -3,6 +3,7 @@
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/kulapard/selavito/blob/master/LICENSE)
 [![Build Status](https://travis-ci.org/kulapard/selavito.svg?branch=master)](https://travis-ci.org/kulapard/selavito)
 [![Code Health](https://landscape.io/github/kulapard/selavito/master/landscape.svg?style=flat)](https://landscape.io/github/kulapard/selavito/master)
+[![Go Report Card](http://goreportcard.com/badge/kulapard/selavito)](http://goreportcard.com/report/kulapard/selavito)
 
 Утилита для парсинга объявлений (вместе с телефонными номерами) с сайта [avito.ru](https://avito.ru)
 
